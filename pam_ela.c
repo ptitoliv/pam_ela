@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #define PAM_SM_SESSION
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <sys/types.h>
 #include <sys/mount.h>
 #include <stdio.h>
@@ -10,6 +11,8 @@
 #include <netlink/netlink.h>
 #include <netlink/route/link.h>
 #include <netlink/route/link/veth.h>
+#include <netlink/route/link/bridge.h>
+#include <netinet/ether.h>
 #include <linux/netlink.h>
 #include <net/if.h>
 #include <syslog.h>
@@ -20,7 +23,7 @@
 #include <security/pam_ext.h>
 #include <utmp.h>
 #include <pwd.h>
-#include <netinet/ether.h>
+#include <unistd.h>
 
 #define NETNS_DIR "/var/run/netns/"
 #define VETH_PREFIX "veth"
@@ -47,11 +50,9 @@ PAM_EXTERN int pam_sm_open_session(pam_handle_t *pamh, int flags,
 	int fd;
 	int err;
 	int status;
-	int flags_rtnl;
   	struct passwd *pwd;
 	struct nl_sock *sk;
-	char* child_args[4];
-	char *user;
+	const char *user;
 	char ns_path[512];
 	char dhclient_pidfile[512];
 	char link_name[50];
@@ -60,8 +61,7 @@ PAM_EXTERN int pam_sm_open_session(pam_handle_t *pamh, int flags,
 	struct nl_cache *cache;
 	struct nl_addr *hwaddr;
 	char *mac_address;
-
-	pid_t pidf; //Initialisé avec la fonction fork()
+	pid_t pidf;
 
 	pam_syslog(pamh, LOG_INFO, "Entering PAM_ELA");
 
@@ -109,14 +109,13 @@ PAM_EXTERN int pam_sm_open_session(pam_handle_t *pamh, int flags,
 			if (fd < 0) {
 				fprintf(stderr, "Could not create %s: %s\n",
 					ns_path, strerror(errno));
-				return -1;
+				return PAM_SESSION_ERR;
 			}
 		close(fd);	
 
 		pam_syslog(pamh, LOG_INFO, "Network Namespace created");
 
 		// Let's fork a process in order to keep one process in the namespace and the other in the master net namespace
-		pam_syslog(pamh, LOG_INFO, "PID AVANT FORK: %d\n",pidf);
 		pidf = fork();
 
 		if (pidf == 0) {
@@ -140,7 +139,7 @@ PAM_EXTERN int pam_sm_open_session(pam_handle_t *pamh, int flags,
 			sk = nl_socket_alloc();
 
 			if (nl_connect(sk, NETLINK_ROUTE) < 0) {
-				return -1;
+				return PAM_SESSION_ERR;
 			}		
 
 			// This is where the magic happens
@@ -184,14 +183,14 @@ PAM_EXTERN int pam_sm_open_session(pam_handle_t *pamh, int flags,
 		{
 			// Father process
 			// Wait that the child process finished to create the namespace
-			wait();
+			wait(&status);
 			pam_syslog(pamh, LOG_INFO, "Child process fini");
 
 			// Init the veth pair
 			sk = nl_socket_alloc();
 
 			if (nl_connect(sk, NETLINK_ROUTE) < 0) {
-				return -1;
+				return PAM_SESSION_ERR;
 			}		
 
 			pam_syslog(pamh, LOG_INFO, "Socket connectée");
@@ -205,7 +204,7 @@ PAM_EXTERN int pam_sm_open_session(pam_handle_t *pamh, int flags,
 
 			if(rtnl_link_is_bridge(bridge) == 0) {
 				fprintf(stderr, "Link is not a bridge\n");
-				return -2;
+				return PAM_SESSION_ERR;
 			}
 
 			pam_syslog(pamh, LOG_INFO, "On a trouve un bridge");
@@ -248,11 +247,16 @@ PAM_EXTERN int pam_sm_open_session(pam_handle_t *pamh, int flags,
 					}
 					else
 					{
-						wait();
+						wait(&status);
 						return PAM_SUCCESS;
 					}
 				}
 			}
+			else
+			{
+				return PAM_SESSION_ERR;
+			}
+			
 		}
 
 	} else {
@@ -266,6 +270,8 @@ PAM_EXTERN int pam_sm_open_session(pam_handle_t *pamh, int flags,
 		}
 		
 	}
+
+	return PAM_SUCCESS;
 }
 
 PAM_EXTERN int pam_sm_close_session(pam_handle_t *pamh, int flags,
@@ -276,13 +282,12 @@ PAM_EXTERN int pam_sm_close_session(pam_handle_t *pamh, int flags,
 	int ret;
 	int err;
 	struct nl_sock *sk;
-	struct rtnl_link *link = NULL, *peer = NULL, *req = NULL, *bridge = NULL;
+	struct rtnl_link *link = NULL;
 	struct nl_cache *cache;
-	char * user;
+	const char * user;
 	char ns_path[512];
 	char dhclient_pidfile[512];
 	char link_name[50];
-	char peer_name[50];
   	struct passwd *pwd;
 	FILE *f;
 	int pid;
@@ -325,14 +330,14 @@ PAM_EXTERN int pam_sm_close_session(pam_handle_t *pamh, int flags,
 		strcat(ns_path,user);
 		pam_syslog(pamh, LOG_INFO, "Suppression de %s\n",ns_path);
 		umount2(ns_path, MNT_DETACH);
-		if (ret = unlink(ns_path) < 0)
+		if ( (ret = unlink(ns_path) < 0) )
 		{
-			pam_syslog(pamh, LOG_INFO, "Unable to delete namespace :%s\n",ret);
+			pam_syslog(pamh, LOG_INFO, "Unable to delete namespace :%d\n",ret);
 		}
 
 		// Test if dhclient is running
 		pam_syslog(pamh, LOG_INFO, "Test DHCP; %s\n",dhclient_pidfile);
-		if (f=fopen(dhclient_pidfile,"r"))
+		if ( (f=fopen(dhclient_pidfile,"r")) )
 		{
 			fscanf(f,"%d", &pid);
 			fclose(f);
@@ -355,7 +360,7 @@ PAM_EXTERN int pam_sm_close_session(pam_handle_t *pamh, int flags,
 		link = rtnl_link_get_by_name(cache, link_name);
 
 		if (0 != (err = rtnl_link_delete(sk, link))) {
-			pam_syslog(pamh, LOG_INFO, "Unable to destroy link :%s\n",err);
+			pam_syslog(pamh, LOG_INFO, "Unable to destroy link :%d\n",err);
 		};
 
 		pam_syslog(pamh, LOG_INFO, "Link destroyed %s\n", link_name);
