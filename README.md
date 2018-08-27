@@ -23,7 +23,7 @@ session    optional     pam_ela.so
 ```
 
 # Disclaimer
-pam_ela is a simple PoC written by a guy who is a terrible C developper. So just use it for test purpose. I won't guarntee that the code is safe and/or secure.
+pam_ela is a simple PoC written by a guy who is a terrible C developper. So just use it for test purpose. I won't guarantee that the code is safe and/or secure.
 
 # Example
 
