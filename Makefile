@@ -1,5 +1,5 @@
 CFLAGS=-Wall -Wextra -O2 -fPIC $(shell pkg-config --cflags libnl-route-3.0)
-LDFLAGS=-rdynamic $(shell pkg-config --libs libnl-route-3.0) -lbsd
+LDFLAGS=-rdynamic $(shell pkg-config --libs libnl-route-3.0)
 PREFIX=/usr/
 DESTDIR=
 
