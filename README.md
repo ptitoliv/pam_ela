@@ -10,6 +10,8 @@ pam_ela is a PAM session module which creates a dedicated network namespace for 
   
 # Compilation
 
+For debian you will need the following dependencies: libpam0g-dev libnl-3-dev libnl-route-3-dev
+
 ``` 
 make && make install 
 ```
@@ -21,6 +23,29 @@ Edit your pam target and add the following line on session block
 ```
 session    optional     pam_ela.so
 ```
+
+Create a bridge named `br0`:
+
+```
+ip link add name br0 type bridge
+ip link set br0 up
+ip address add 10.11.0.1/24 dev br0
+```
+
+Add a dhcp server on br0:
+
+```
+apt install isc-dhcp-client isc-dhcp-server
+cat >> /etc/dhcp/dhcpd.conf <<EOF
+subnet 10.11.0.0 netmask 255.255.255.0 {
+    range 10.11.0.10 10.11.0.200;
+    option routers 10.11.0.1;
+}
+EOF
+service isc-dhcp-server restart
+```
+
+
 
 # Disclaimer
 pam_ela is a simple PoC written by a guy who is a terrible C developper. So just use it for test purpose. I won't guarantee that the code is safe and/or secure.
