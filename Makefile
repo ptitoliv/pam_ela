@@ -1,21 +1,23 @@
-CFLAGS=-Wall -Wextra -O2 -fPIC $(shell pkg-config --cflags libnl-route-3.0)
-LDFLAGS=-rdynamic $(shell pkg-config --libs libnl-route-3.0)
-PREFIX=/usr/
-DESTDIR=
+CFLAGS += -Wall -Wextra -O2 -fPIC $(shell pkg-config --cflags libnl-route-3.0)
+LDFLAGS += $(shell pkg-config --libs libnl-route-3.0)
+PREFIX ?= /lib/security
+DESTDIR ?=
 
-all: pam_ela.so
+MODULE=pam_ela.so
 
-pam_ela.so: pam_ela.o
-	$(CC) -shared -o $@ $^ $(LDFLAGS)
+all: $(MODULE)
+
+%.so: %.o
+	ld -x --shared -o $@ $< $(LDFLAGS)
 
 clean:
-	rm -f pam_ela.so pam_ela.o
+	rm -f $(MODULE) $(MODULE:.so=.o)
 
-install: pam_ela.so
-	mkdir -p -- "$(DESTDIR)$(PREFIX)"/lib64/security/
-	install -- "$<" "$(DESTDIR)$(PREFIX)"/lib64/security/
+install: $(MODULE)
+	mkdir -p -- "$(DESTDIR)$(PREFIX)"
+	install -- "$<" "$(DESTDIR)$(PREFIX)"
 
 uninstall:
-	rm -f -- "$(DESTDIR)$(PREFIX)"/lib64/security/pam_ela.so
+	rm -f -- "$(DESTDIR)$(PREFIX)/$(MODULE)"
 
 .PHONY: all test clean install uninstall
