@@ -35,7 +35,7 @@ void int2mac(uint16_t value, char *dst)
 {
 	struct ether_addr mac = { { 0x00, 0x11, 0x22, 0x33, 0, 0 } };
 
-	mac.ether_addr_octet[4] = value & 0xFF00 >> 8 ;
+	mac.ether_addr_octet[4] = ( value & 0xFF00 ) >> 8 ;
 	mac.ether_addr_octet[5] = value & 0x00FF ;
 
 	strncpy(dst, ether_ntoa(&mac), MAC_LENGTH);
