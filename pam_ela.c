@@ -373,8 +373,8 @@ PAM_EXTERN int pam_sm_close_session(pam_handle_t *pamh, int flags,
 
 	pam_syslog(pamh, LOG_INFO, "Active sessions for user %s: %d",user, logged_users);
 
-	// Check if we were the last user
-	if (logged_users == 0)
+	// Check if we are the last user
+	if (logged_users == 1)
 	{
 		sprintf(link_name,"%s_%d_%d",VETH_PREFIX,pwd->pw_uid,0);
 		sprintf(dhclient_pidfile,"/var/run/dhclient-%s",link_name);
