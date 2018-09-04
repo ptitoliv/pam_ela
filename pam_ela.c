@@ -291,6 +291,7 @@ PAM_EXTERN int pam_sm_close_session(pam_handle_t *pamh, int flags,
   	struct passwd *pwd;
 	FILE *f;
 	int pid;
+	int fd;
 	struct utmp *user_entry;
 	int logged_users=0;
 
@@ -298,13 +299,57 @@ PAM_EXTERN int pam_sm_close_session(pam_handle_t *pamh, int flags,
 
 	// First let's get the username in order to create the correct namespace
 	pam_get_user(pamh, &user, NULL);
+	pwd = getpwnam(user);
+	sprintf(link_name,"%s_%d_%d",VETH_PREFIX,pwd->pw_uid,0);
 
 	user_entry = getutent();
 	while(user_entry != NULL)
 	{
 		if (strcmp(user, &user_entry->ut_name) == 0)
 		{
-			logged_users++;
+			// Letr'"s try to enter into the namespace
+			if (user_entry->ut_type == USER_PROCESS)
+			{
+				// Let's try to enter into the namespace of this PID
+				sprintf(ns_path, "/proc/%d/ns/net", user_entry->ut_pid);
+				fd = open(ns_path, O_RDONLY);
+				if (fd > 0) {
+					if(setns(fd,CLONE_NEWNET) < 0)
+					{
+						pam_syslog(pamh, LOG_ERR,"Unable to enter into namespace %s\n",strerror(errno));
+					}
+					else
+					{
+						// We are into the namespace ==> Check if the card exists
+						sk = nl_socket_alloc();
+
+						if (nl_connect(sk, NETLINK_ROUTE) < 0) {
+							return -1;
+						}		
+						link = NULL;
+						cache = NULL;
+						rtnl_link_alloc_cache(sk, AF_UNSPEC, &cache);
+						link = rtnl_link_alloc();
+						link = rtnl_link_get_by_name(cache, link_name);
+
+						if (link != NULL) 
+						{
+							logged_users++;	
+						}
+
+						// Clear all rtnl objects in order to be clean in the new namsepace
+						rtnl_link_put(link); 
+						nl_cache_put(cache);
+						nl_socket_free(sk);
+					}
+
+					close(fd);
+				}
+				else
+				{
+					pam_syslog(pamh, LOG_ERR,"Unable to open file descriptor NS: %s\n",strerror(errno));
+				}
+			}
 		}
 		user_entry = getutent();
 	}
@@ -314,8 +359,6 @@ PAM_EXTERN int pam_sm_close_session(pam_handle_t *pamh, int flags,
 	// Check if we were the last user
 	if (logged_users == 0)
 	{
-		pwd = getpwnam(user);
-		sprintf(link_name,"%s_%d_%d",VETH_PREFIX,pwd->pw_uid,0);
 		sprintf(dhclient_pidfile,"/var/run/dhclient-%s",link_name);
 
 		// Init the veth pair
