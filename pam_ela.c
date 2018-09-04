@@ -1,3 +1,11 @@
+/*
+ * pam_ela.c : Allocates a dedicated network namespace for the logged user.
+ *
+ * Author (System design, PoC implementation): Olivier Bonhomme <olivier@bonhomme.io>
+ * Author (Code improvments, cleaning and fixes): Benoit Plessis <benoit@plessis.info>
+ *
+ */
+
 #define _GNU_SOURCE
 #define PAM_SM_SESSION
 #include <sys/stat.h>
